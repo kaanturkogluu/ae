@@ -1,0 +1,199 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Order;
+use App\Models\Setting;
+use App\Services\MailService;
+use App\Services\NetgsmService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+
+class SettingController extends Controller
+{
+    public function index()
+    {
+        $settings = Setting::getAllGrouped();
+        return view('admin.settings.index', compact('settings'));
+    }
+
+    public function update(Request $request)
+    {
+        $request->validate([
+            'admin_email'            => 'nullable|email|max:255',
+            'admin_phone'            => 'nullable|string|max:30',
+            'admin_sms_template'     => 'nullable|string|max:500',
+            'admin_email_subject'    => 'nullable|string|max:255',
+            'netgsm_usercode'        => 'nullable|string|max:100',
+            'netgsm_password'        => 'nullable|string|max:100',
+            'netgsm_header'          => 'nullable|string|max:50',
+            'facebook_pixel_id'      => 'nullable|string|max:100',
+            'facebook_access_token'  => 'nullable|string|max:500',
+        ]);
+
+        // Sipariş & Bildirim Ayarları
+        Setting::set('admin_email', $request->input('admin_email', ''), 'notifications');
+        Setting::set('admin_phone', $request->input('admin_phone', ''), 'notifications');
+        Setting::set('notify_admin_email', $request->has('notify_admin_email') ? '1' : '0', 'notifications');
+        Setting::set('notify_admin_sms', $request->has('notify_admin_sms') ? '1' : '0', 'notifications');
+        Setting::set('notify_customer_email', $request->has('notify_customer_email') ? '1' : '0', 'notifications');
+        Setting::set('notify_customer_sms', $request->has('notify_customer_sms') ? '1' : '0', 'notifications');
+        Setting::set('admin_sms_template', $request->input('admin_sms_template', ''), 'notifications');
+        Setting::set('admin_email_subject', $request->input('admin_email_subject', ''), 'notifications');
+
+        // Netgsm SMS Ayarları
+        Setting::set('netgsm_usercode', $request->input('netgsm_usercode', ''), 'sms');
+        Setting::set('netgsm_password', $request->input('netgsm_password', ''), 'sms');
+        Setting::set('netgsm_header', $request->input('netgsm_header', ''), 'sms');
+
+        // Meta & Facebook (Pixel & CAPI) Ayarları
+        Setting::set('facebook_pixel_id', $request->input('facebook_pixel_id', ''), 'facebook');
+        Setting::set('facebook_access_token', $request->input('facebook_access_token', ''), 'facebook');
+
+        // Yurtiçi Kargo Ayarları
+        if ($request->has('yurtici_settings_submitted')) {
+            Setting::set('yurtici_active', $request->has('yurtici_active') ? '1' : '0', 'cargo');
+            Setting::set('yurtici_default_payment', $request->input('yurtici_default_payment', 'GO'), 'cargo');
+            Setting::set('yurtici_go_user', $request->input('yurtici_go_user', ''), 'cargo');
+            Setting::set('yurtici_go_pass', $request->input('yurtici_go_pass', ''), 'cargo');
+            Setting::set('yurtici_ao_user', $request->input('yurtici_ao_user', ''), 'cargo');
+            Setting::set('yurtici_ao_pass', $request->input('yurtici_ao_pass', ''), 'cargo');
+            Setting::set('yurtici_branch_code', $request->input('yurtici_branch_code', '3150'), 'cargo');
+            Setting::set('yurtici_branch_name', $request->input('yurtici_branch_name', 'SPİL'), 'cargo');
+            Setting::set('yurtici_customer_code', $request->input('yurtici_customer_code', '178821492'), 'cargo');
+            Setting::set('yurtici_customer_name', $request->input('yurtici_customer_name', 'METE ALMAZ'), 'cargo');
+            Setting::set('yurtici_endpoint', $request->input('yurtici_endpoint', 'https://ws.yurticikargo.com/KOPSWebServices/ShippingOrderDispatcherServices'), 'cargo');
+        }
+
+        return redirect()->route('admin.settings.index')->with('success', 'Sistem ayarları, bildirimler ve Yurtiçi Kargo yapılandırması başarıyla kaydedildi.');
+    }
+
+    public function testYurtici(Request $request, \App\Services\YurticiKargoService $yurticiService)
+    {
+        $result = $yurticiService->testConnection();
+
+        if ($result['success']) {
+            return redirect()->back()->with('success', 'Yurtiçi Kargo Web Servis Bağlantı Testi Başarılı! Hem GÖ (Gönderici Ödemeli) hem AÖ (Alıcı Ödemeli) API hesapları SPİL şubesi üzerinden başarıyla doğrulandı.');
+        } else {
+            $errDetail = '';
+            if (!empty($result['results'])) {
+                foreach ($result['results'] as $acc) {
+                    if (!$acc['success']) {
+                        $errDetail .= " [{$acc['label']}: {$acc['message']}]";
+                    }
+                }
+            }
+            return redirect()->back()->with('error', 'Yurtiçi Kargo API Bağlantı Testi Başarısız: ' . ($result['message'] . $errDetail));
+        }
+    }
+
+    public function testFacebookCapi(Request $request, \App\Services\FacebookCapiService $fbCapi)
+    {
+        $result = $fbCapi->testConnection();
+
+        if ($result['success']) {
+            return redirect()->back()->with('success', 'Meta (Facebook) Dönüşümler API (CAPI) testi başarılı! Olay Meta Event Manager paneline iletildi.');
+        } else {
+            return redirect()->back()->with('error', 'Meta CAPI Testi Başarısız: ' . ($result['message'] ?? 'Bilinmeyen hata'));
+        }
+    }
+
+    public function testSms(Request $request, NetgsmService $netgsm)
+    {
+        $phone = $request->input('test_phone') ?: Setting::get('admin_phone', config('services.netgsm.admin_phone'));
+
+        if (empty($phone)) {
+            return redirect()->back()->with('error', 'Test SMS gönderilemedi: Telefon numarası girilmedi veya ayarlanmadı.');
+        }
+
+        $message = "AhsapEvim Test SMS: Bildirim sisteminiz basariyla calismaktadir. Tarih: " . now()->format('d.m.Y H:i:s');
+        $result = $netgsm->sendSms($phone, $message, null, 'manual');
+
+        if ($result) {
+            return redirect()->back()->with('success', "Test SMS mesajı {$phone} numarasına başarıyla iletildi.");
+        } else {
+            return redirect()->back()->with('error', "Test SMS gönderimi başarısız oldu. Lütfen Netgsm kullanıcı adı, şifre ve başlık (header) bilgilerinizi kontrol ediniz.");
+        }
+    }
+
+    public function testEmail(Request $request, MailService $mailService)
+    {
+        $email = $request->input('test_email') ?: Setting::get('admin_email', config('mail.from.address'));
+
+        if (empty($email)) {
+            return redirect()->back()->with('error', 'Test E-Postası gönderilemedi: E-posta adresi girilmedi veya ayarlanmadı.');
+        }
+
+        $subject = "AhşapEvim — Test E-Posta Bildirimi";
+        $body = "<p>Merhaba,</p><p>Bu bir test e-postasıdır. AhşapEvim sipariş bildirim sistemi ve SMTP e-posta sunucunuz başarıyla çalışmaktadır.</p><p><strong>Gönderim Zamanı:</strong> " . now()->format('d.m.Y H:i:s') . "</p>";
+
+        $result = $mailService->sendMail($email, $subject, $body, null, 'manual');
+
+        if ($result) {
+            return redirect()->back()->with('success', "Test e-postası {$email} adresine başarıyla gönderildi.");
+        } else {
+            return redirect()->back()->with('error', "Test e-postası gönderilirken bir hata oluştu. Lütfen SMTP yapılandırmanızı kontrol ediniz.");
+        }
+    }
+
+    /**
+     * Canlı admin bildirim zili için son siparişler JSON API endpoint'i
+     */
+    public function recentOrdersApi(Request $request)
+    {
+        try {
+            $lastOrderId = (int)$request->input('last_order_id', 0);
+            
+            $statusLabels = [
+                'pending'   => 'Ödeme Bekliyor',
+                'paid'      => 'Ödeme Alındı',
+                'preparing' => 'Hazırlanıyor',
+                'shipped'   => 'Kargoya Verildi',
+                'completed' => 'Tamamlandı',
+                'cancelled' => 'İptal Edildi',
+                'failed'    => 'Başarısız',
+            ];
+
+            $recentOrders = \Illuminate\Support\Facades\Cache::remember('admin_recent_orders_list', 15, function () use ($statusLabels) {
+                return Order::latest()
+                    ->take(6)
+                    ->get()
+                    ->map(function ($order) use ($statusLabels) {
+                        $statusText = $statusLabels[$order->status] ?? $order->status;
+                        $timeAgo = $order->created_at ? $order->created_at->locale('tr')->diffForHumans() : 'Az önce';
+
+                        return [
+                            'id'            => $order->id,
+                            'name'          => $order->name,
+                            'total_amount'  => number_format($order->total_amount, 2, ',', '.') . ' ₺',
+                            'status'        => $statusText,
+                            'time_ago'      => $timeAgo,
+                            'url'           => route('admin.orders.show', $order->id),
+                            'is_new'        => $order->created_at ? $order->created_at->greaterThan(now()->subHours(24)) : false,
+                        ];
+                    });
+            });
+
+            $newCount = \Illuminate\Support\Facades\Cache::remember('admin_recent_orders_count', 15, function () {
+                return Order::where('created_at', '>=', now()->subHours(48))
+                    ->whereIn('status', ['pending', 'paid', 'preparing'])
+                    ->count();
+            });
+
+            $latestId = $recentOrders->first()['id'] ?? 0;
+            $hasNewer = ($lastOrderId > 0 && $latestId > $lastOrderId);
+
+            return response()->json([
+                'status'        => 'success',
+                'orders'        => $recentOrders,
+                'count'         => $newCount,
+                'has_newer'     => $hasNewer,
+                'latest_id'     => $latestId,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+}
