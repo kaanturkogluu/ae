@@ -3,56 +3,52 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\OrderItem;
-use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RevenueController extends Controller
 {
     /**
-     * Ödeme alınmış sipariş durumları:
-     * - 'paid'       : İyzico kart ödemesi başarılı
-     * - 'preparing'  : Siparişe alındı
-     * - 'shipped'    : Kargoya verildi
-     * - 'completed'  : Teslim edildi / tamamlandı
-     * 'pending' (EFT bekliyor), 'failed', 'cancelled' dahil edilmez.
+     * Gelir Tablosu ve Yönetim Dashboard
      */
-    private array $paidStatuses = ['paid', 'preparing', 'shipped', 'completed'];
-
-    public function index(Request $request)
+    public function index()
     {
-        // Temel metrikler – sadece ödemesi alınmış siparişler
-        $totalRevenue = Order::whereIn('status', $this->paidStatuses)->sum('total_amount');
+        try {
+            $validOrders = Order::where('status', '!=', 'cancelled');
 
-        $thisMonthRevenue = Order::whereIn('status', $this->paidStatuses)
-                                ->whereMonth('created_at', Carbon::now()->month)
-                                ->whereYear('created_at', Carbon::now()->year)
-                                ->sum('total_amount');
+            $totalRevenue = (clone $validOrders)->sum('total_amount') ?? 0;
 
-        $totalOrders = Order::whereIn('status', $this->paidStatuses)->count();
+            $thisMonthRevenue = (clone $validOrders)
+                ->whereMonth('created_at', now()->month)
+                ->whereYear('created_at', now()->year)
+                ->sum('total_amount') ?? 0;
 
-        $totalProductsSold = OrderItem::join('orders', 'orders.id', '=', 'order_items.order_id')
-            ->whereIn('orders.status', $this->paidStatuses)
-            ->sum('order_items.quantity');
+            $totalOrders = (clone $validOrders)->count();
 
-        // Son 30 günlük günlük gelir verisi (grafik) - Tek sorguda grup olarak çekilir (N+1 engellendi)
-        $startDate = Carbon::now()->subDays(29)->startOfDay();
-        $dailyRevenues = Order::whereIn('status', $this->paidStatuses)
-            ->where('created_at', '>=', $startDate)
-            ->selectRaw('DATE(created_at) as order_date, SUM(total_amount) as total')
-            ->groupBy('order_date')
-            ->pluck('total', 'order_date')
-            ->toArray();
+            $totalProductsSold = OrderItem::whereHas('order', function ($q) {
+                $q->where('status', '!=', 'cancelled');
+            })->sum('quantity') ?? 0;
 
-        $last30Days   = [];
-        $revenueData  = [];
+            // Son 30 günlük gelir grafiği
+            $revenueByDay = (clone $validOrders)
+                ->where('created_at', '>=', now()->subDays(30))
+                ->select(DB::raw('DATE(created_at) as date'), DB::raw('SUM(total_amount) as total'))
+                ->groupBy('date')
+                ->orderBy('date', 'ASC')
+                ->get()
+                ->pluck('total', 'date')
+                ->toArray();
 
-        for ($i = 29; $i >= 0; $i--) {
-            $date = Carbon::now()->subDays($i);
-            $dateKey = $date->toDateString();
-            $last30Days[]  = $date->format('d M');
-            $revenueData[] = (float) ($dailyRevenues[$dateKey] ?? 0);
+            $recentOrders = Order::with('items')->latest()->take(10)->get();
+        } catch (\Throwable $e) {
+            $totalRevenue = 0;
+            $thisMonthRevenue = 0;
+            $totalOrders = 0;
+            $totalProductsSold = 0;
+            $revenueByDay = [];
+            $recentOrders = collect();
         }
 
         return view('admin.revenue.index', compact(
@@ -60,8 +56,8 @@ class RevenueController extends Controller
             'thisMonthRevenue',
             'totalOrders',
             'totalProductsSold',
-            'last30Days',
-            'revenueData'
+            'revenueByDay',
+            'recentOrders'
         ));
     }
 }

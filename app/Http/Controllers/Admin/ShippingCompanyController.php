@@ -10,50 +10,32 @@ class ShippingCompanyController extends Controller
 {
     public function index()
     {
-        $companies = ShippingCompany::latest()->paginate(15);
-        return view('admin.shipping_companies.index', compact('companies'));
+        try {
+            $shippingCompanies = ShippingCompany::all();
+        } catch (\Throwable $e) {
+            $shippingCompanies = collect();
+        }
+        return view('admin.shipping_companies.index', compact('shippingCompanies'));
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'website_url' => 'nullable|url|max:500',
-        ]);
-
-        ShippingCompany::create([
-            'name' => $request->name,
-            'website_url' => $request->website_url,
-            'is_active' => true,
-        ]);
-
-        return redirect()->back()->with('success', 'Kargo şirketi başarıyla eklendi.');
+        $request->validate(['name' => 'required|string|max:255']);
+        ShippingCompany::create($request->only('name', 'tracking_url', 'is_active'));
+        return redirect()->route('admin.shipping_companies.index')->with('success', 'Kargo şirketi eklendi.');
     }
 
     public function update(Request $request, $id)
     {
         $company = ShippingCompany::findOrFail($id);
-
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'website_url' => 'nullable|url|max:500',
-            'is_active' => 'required|boolean',
-        ]);
-
-        $company->update([
-            'name' => $request->name,
-            'website_url' => $request->website_url,
-            'is_active' => $request->is_active,
-        ]);
-
-        return redirect()->back()->with('success', 'Kargo şirketi başarıyla güncellendi.');
+        $company->update($request->only('name', 'tracking_url', 'is_active'));
+        return redirect()->route('admin.shipping_companies.index')->with('success', 'Kargo şirketi güncellendi.');
     }
 
     public function destroy($id)
     {
         $company = ShippingCompany::findOrFail($id);
         $company->delete();
-
-        return redirect()->back()->with('success', 'Kargo şirketi silindi.');
+        return redirect()->route('admin.shipping_companies.index')->with('success', 'Kargo şirketi silindi.');
     }
 }

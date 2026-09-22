@@ -1,243 +1,255 @@
 @extends('layouts.admin')
 
-@section('header', 'Ürünü Düzenle')
+@section('header', 'Ürün Düzenle')
 
 @section('content')
-<div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm max-w-4xl">
-    <div class="mb-6 pb-4 border-b border-gray-100 flex justify-between items-center">
+<div class="max-w-4xl mx-auto space-y-6 pb-12">
+
+    <!-- Header & Back Button -->
+    <div class="flex items-center justify-between">
         <div>
-            <h3 class="text-lg font-bold text-gray-800">Ürün Bilgileri</h3>
-            <p class="text-xs text-gray-500 mt-1">Düzenlenen ürünün temel, indirim, galeri ve 3D özelliklerini güncelleyin.</p>
+            <h2 class="text-xl font-bold text-gray-800">Ürünü Düzenle: <span class="text-[#C87A53]">{{ $product->name }}</span></h2>
+            <p class="text-xs text-gray-500 mt-0.5">Ürün detaylarını, R2 görsellerini ve video bağlantılarını güncelleyin.</p>
         </div>
-        <a href="{{ route('admin.products.index') }}" class="text-sm font-bold text-gray-500 hover:text-gray-700 transition">
-            <i class="fa-solid fa-arrow-left mr-1"></i> Geri Dön
-        </a>
+        <div class="flex items-center gap-2">
+            <a href="{{ $product->url }}" target="_blank" class="py-2 px-3.5 bg-brand-light text-[#C87A53] hover:bg-[#C87A53] hover:text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                <i class="fa-solid fa-eye"></i> Sitede Gör
+            </a>
+            <a href="{{ route('admin.products.index') }}" class="py-2 px-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                <i class="fa-solid fa-arrow-left"></i> Listeye Dön
+            </a>
+        </div>
     </div>
 
-    <form action="{{ route('admin.products.update', $product->id) }}" method="POST" enctype="multipart/form-data" onsubmit="preventSpamSubmit(this)">
+    @if ($errors->any())
+        <div class="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs space-y-1">
+            <div class="font-bold">⚠️ Lütfen aşağıdaki hataları düzeltiniz:</div>
+            <ul class="list-disc list-inside">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    <form action="{{ route('admin.products.update', $product->id) }}" method="POST" enctype="multipart/form-data" class="space-y-6">
         @csrf
         @method('PUT')
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Left Side: Basic Info & Pricing -->
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Ürün Adı *</label>
-                    <input type="text" name="name" id="productNameInput" required value="{{ old('name', $product->name) }}" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Örn: 360 Dönen Masif Çerçeve" oninput="autoGenerateSlug(this.value)">
+
+        <!-- 1. Temel Bilgiler -->
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+            <h3 class="font-bold text-sm text-gray-800 pb-2 border-b border-gray-100 flex items-center gap-2">
+                <i class="fa-solid fa-box text-[#C87A53]"></i> Temel Bilgiler
+            </h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Ürün Adı -->
+                <div class="md:col-span-2 space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">Ürün Adı *</label>
+                    <input type="text" name="name" value="{{ old('name', $product->name) }}" required class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-[#C87A53] focus:bg-white transition">
                 </div>
 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1 flex items-center justify-between">
-                        <span>URL Adresi (SEO Slug) *</span>
-                        <a href="{{ $product->url }}" target="_blank" class="text-[11px] font-bold text-[#C87A53] hover:underline">
-                            Ürünü Sitede Gör <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5"></i>
-                        </a>
-                    </label>
-                    <div class="flex items-center">
-                        <span class="bg-gray-100 text-gray-500 text-xs px-3 py-2.5 border border-r-0 border-gray-300 rounded-l-lg font-mono shrink-0">/urun/</span>
-                        <input type="text" name="slug" id="productSlugInput" value="{{ old('slug', $product->slug) }}" class="w-full text-sm border-gray-300 rounded-r-lg p-2.5 border focus:border-brand focus:ring-0 outline-none font-mono text-gray-700" placeholder="360-donen-masif-cerceve" oninput="isSlugManuallyEdited = true">
-                    </div>
+                <!-- Kategori -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">Kategori</label>
+                    <select name="category_id" class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-[#C87A53] focus:bg-white transition cursor-pointer">
+                        <option value="">Kategori Seçiniz (Opsiyonel)...</option>
+                        @foreach($categories as $cat)
+                            <option value="{{ $cat->id }}" {{ old('category_id', $product->category_id) == $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
+                        @endforeach
+                    </select>
                 </div>
 
-                <div class="grid grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Kategori *</label>
-                        <select name="category_id" required class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none bg-white">
-                            <option value="">Seçin...</option>
-                            @foreach($categories as $cat)
-                                <option value="{{ $cat->id }}" {{ old('category_id', $product->category_id) == $cat->id ? 'selected' : '' }}>{{ $cat->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Stok Adedi *</label>
-                        <input type="number" name="stock" required value="{{ old('stock', $product->stock) }}" min="0" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Sıralama (Sıra)</label>
-                        <input type="number" name="sort_order" value="{{ old('sort_order', $product->sort_order) }}" min="1" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" title="Ürünün sitedeki sıralama pozisyonu">
-                    </div>
-                </div>
-
-                @php
-                    $isDiscounted = old('has_discount', $product->original_price > $product->price);
-                    $normalPriceVal = $isDiscounted ? $product->original_price : $product->price;
-                    $discountedPriceVal = $isDiscounted ? $product->price : '';
-                @endphp
-
-                <!-- Price & Discount Section -->
-                <div class="p-4 bg-red-50/40 border border-red-200/50 rounded-xl space-y-3">
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Normal Fiyat (TL) *</label>
-                        <input type="number" id="normalPrice" name="price" required step="0.01" value="{{ old('price', $normalPriceVal) }}" min="0" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Örn: 500.00" oninput="calculateDiscount()">
-                    </div>
-
-                    <div class="flex items-center gap-2 pt-1">
-                        <input type="checkbox" name="has_discount" id="hasDiscount" value="1" {{ $isDiscounted ? 'checked' : '' }} onchange="toggleDiscountBlock()" class="rounded text-red-600 focus:ring-red-500 w-4 h-4 cursor-pointer">
-                        <label for="hasDiscount" class="text-sm font-bold text-red-700 cursor-pointer select-none">Bu Üründe İndirim Var</label>
-                    </div>
-
-                    <div id="discountBlock" class="{{ $isDiscounted ? '' : 'hidden' }} space-y-2 pt-1 border-t border-red-100">
-                        <div class="flex items-center justify-between">
-                            <label class="block text-sm font-semibold text-gray-700">İndirimli Satış Fiyatı (TL) *</label>
-                            <span id="discountBadge" class="hidden text-xs bg-red-600 text-white font-extrabold px-2 py-0.5 rounded-full"></span>
-                        </div>
-                        <input type="number" id="discountedPrice" name="discounted_price" step="0.01" value="{{ old('discounted_price', $discountedPriceVal) }}" min="0" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Örn: 350.00" oninput="calculateDiscount()">
-                        <p class="text-[11px] text-gray-500">Müşteriye <strong>Normal Fiyat</strong> çizili olarak, <strong>İndirimli Fiyat</strong> ve indirim oranı rozeti olarak gösterilecektir.</p>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Ahşap Rengi/Türü</label>
-                        <input type="text" name="color" value="{{ old('color', $product->features['color'] ?? 'Ceviz') }}" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Örn: Masif Meşe">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Ölçü/Boyut</label>
-                        <input type="text" name="size" value="{{ old('size', $product->features['size'] ?? '20x25 cm') }}" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Örn: 15x21 cm">
-                    </div>
+                <!-- SEO URL / Slug -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">SEO URL / Slug</label>
+                    <input type="text" name="slug" value="{{ old('slug', $product->slug) }}" class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-[#C87A53] focus:bg-white transition">
                 </div>
             </div>
 
-            <!-- Right Side: Media & 3D Settings -->
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Görseli Değiştir (Ana Görsel)</label>
-                    <input type="file" name="image" class="w-full text-sm border-gray-300 rounded-lg p-2 border focus:border-brand focus:ring-0 outline-none bg-gray-50">
+            <!-- Açıklama -->
+            <div class="space-y-1 pt-2">
+                <label class="block text-xs font-bold text-gray-700 uppercase">Ürün Açıklaması</label>
+                <textarea name="description" rows="5" class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-[#C87A53] focus:bg-white transition">{{ old('description', $product->description) }}</textarea>
+            </div>
+        </div>
+
+        <!-- 2. Fiyatlandırma & Stok -->
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+            <h3 class="font-bold text-sm text-gray-800 pb-2 border-b border-gray-100 flex items-center gap-2">
+                <i class="fa-solid fa-tags text-[#C87A53]"></i> Fiyatlandırma & Stok
+            </h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Orijinal Fiyat -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">Orijinal Fiyat (TL) *</label>
+                    <input type="number" step="0.01" name="original_price" value="{{ old('original_price', $product->original_price) }}" required class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-[#C87A53] focus:bg-white transition font-mono font-bold">
+                </div>
+
+                <!-- İndirimli Fiyat -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">İndirimli Fiyat (TL)</label>
+                    <input type="number" step="0.01" name="discount_price" value="{{ old('discount_price', $product->discount_price) }}" placeholder="Opsiyonel" class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-[#C87A53] focus:bg-white transition font-mono font-bold text-emerald-700">
+                </div>
+
+                <!-- Stok -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">Stok Adedi *</label>
+                    <input type="number" name="stock" value="{{ old('stock', $product->stock) }}" required min="0" class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-[#C87A53] focus:bg-white transition font-mono">
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Görseller (R2 Depolama) -->
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-5">
+            <h3 class="font-bold text-sm text-gray-800 pb-2 border-b border-gray-100 flex items-center gap-2">
+                <i class="fa-solid fa-cloud-arrow-up text-[#C87A53]"></i> Ürün Görselleri
+            </h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Ana Kapak Görseli -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">Ana Kapak Görseli (main_image)</label>
                     
-                    @if($product->image)
-                        <div class="mt-2 flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-150 w-fit">
-                            <img src="{{ $product->image }}" class="h-12 w-10 object-contain" alt="old image">
-                            <span class="text-xs text-gray-500 font-semibold">Mevcut ana görsel saklanıyor.</span>
+                    @if($product->main_image)
+                        <div class="relative w-full h-40 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden mb-2">
+                            <img src="{{ $product->main_image_url }}" class="w-full h-full object-contain">
+                            <span class="absolute top-2 left-2 bg-black/60 text-white text-[9px] px-2 py-0.5 rounded font-bold">Mevcut Kapak</span>
                         </div>
                     @endif
+
+                    <div class="border-2 border-dashed border-gray-300 hover:border-[#C87A53] rounded-xl p-3 text-center cursor-pointer bg-gray-50 transition" onclick="document.getElementById('editMainImageInput').click()">
+                        <input type="file" name="main_image" id="editMainImageInput" accept="image/*" class="hidden" onchange="previewEditMainImage(this)">
+                        <div class="text-xs text-gray-600 font-bold">Yeni Kapak Seç (Değiştirmek için)</div>
+                        <span class="text-[10px] text-gray-400">JPG, PNG, WEBP</span>
+                        <img id="editMainImagePreview" class="w-full h-28 object-contain rounded-lg hidden mt-2">
+                    </div>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Ek Ürün Görselleri (Galeri Ekle/Yönet)</label>
-                    <input type="file" name="gallery[]" multiple accept="image/*" class="w-full text-sm border-gray-300 rounded-lg p-2 border focus:border-brand focus:ring-0 outline-none bg-gray-50">
-                    
-                    @if(isset($product->features['images']) && is_array($product->features['images']) && count($product->features['images']) > 0)
-                        <div class="mt-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            <label class="block text-xs font-bold text-gray-700 mb-2">Mevcut Galeri Görselleri (Silmek istediklerinizi işaretleyin):</label>
-                            <div class="grid grid-cols-4 gap-2">
-                                @foreach($product->features['images'] as $gImg)
-                                    <div class="relative group border border-gray-200 rounded-lg p-1 bg-white flex flex-col items-center">
-                                        <img src="{{ str_starts_with($gImg, 'http') ? $gImg : url($gImg) }}" class="h-16 w-full object-contain rounded" alt="gallery image">
-                                        <label class="mt-1 flex items-center gap-1 text-[11px] text-red-600 font-bold cursor-pointer">
-                                            <input type="checkbox" name="remove_gallery[]" value="{{ $gImg }}" class="rounded text-red-600 focus:ring-red-500">
-                                            Sil
-                                        </label>
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-                </div>
+                <!-- Galeri Görselleri -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold text-gray-700 uppercase">Galeri Görselleri (other_images)</label>
 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1 flex items-center gap-1">
-                        <i class="fa-brands fa-youtube text-red-600 text-base"></i> YouTube Tanıtım Video Linki (Opsiyonel)
-                    </label>
-                    <input type="url" name="youtube_url" value="{{ old('youtube_url', $product->features['youtube_url'] ?? '') }}" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Örn: https://www.youtube.com/watch?v=XXXXXX">
-                    <p class="text-[10px] text-gray-500 mt-1">Eklenirse ürün detay galerisine YouTube video butonu eklenir.</p>
-                </div>
-
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1 flex items-center gap-1">
-                        <i class="fa-brands fa-instagram text-pink-600 text-base"></i> Instagram Video / Reel Linki (Opsiyonel)
-                    </label>
-                    <input type="url" name="instagram_url" value="{{ old('instagram_url', $product->features['instagram_url'] ?? '') }}" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Örn: https://www.instagram.com/reel/CsqVN6MuKfV/">
-                    <p class="text-[10px] text-gray-500 mt-1">Eklenirse ürün detay galerisinde Instagram Reel rozeti ve pop-up oynatıcı gösterilir.</p>
-                </div>
-
-                <!-- 3D Model Entegrasyonu (Arka plana alındı / Pasif) -->
-                <div class="hidden bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <h4 class="text-sm font-bold text-gray-800 mb-3 border-b border-gray-100 pb-2 flex items-center gap-2">
-                        <i class="fa-solid fa-cube text-brand"></i> 3D Model Entegrasyonu (Şablon)
-                    </h4>
-                    
-                    <div class="mb-3">
-                        <label class="block text-xs font-bold text-gray-700 mb-1">Ürün 3D Şablonu</label>
-                        <select name="three_d_template_id" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none bg-white">
-                            <option value="">-- Şablon Seçimi Yok (Pasif) --</option>
-                            @foreach($templates as $tpl)
-                                <option value="{{ $tpl->id }}" {{ old('three_d_template_id', $product->three_d_template_id) == $tpl->id ? 'selected' : '' }}>{{ $tpl->name }} ({{ $tpl->wood_type }})</option>
+                    @if(!empty($product->other_images) && is_array($product->other_images))
+                        <div class="grid grid-cols-4 gap-2 mb-3">
+                            @foreach($product->other_images as $index => $img)
+                                <div class="relative aspect-square rounded-lg bg-gray-100 border border-gray-200 overflow-hidden group" id="galBox-{{ $index }}">
+                                    <img src="{{ str_starts_with($img, 'http') ? $img : url($img) }}" class="w-full h-full object-cover">
+                                    <input type="hidden" name="keep_other_images[]" value="{{ $img }}" id="keepGal-{{ $index }}">
+                                    <button type="button" onclick="removeGalleryImg('{{ $index }}')" class="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center opacity-90 hover:opacity-100 shadow-sm" title="Fotoğrafı Kaldır">
+                                        &times;
+                                    </button>
+                                </div>
                             @endforeach
-                        </select>
+                        </div>
+                    @endif
+
+                    <div class="border-2 border-dashed border-gray-300 hover:border-[#C87A53] rounded-xl p-3 text-center cursor-pointer bg-gray-50 transition" onclick="document.getElementById('editOtherImagesInput').click()">
+                        <input type="file" name="other_images[]" id="editOtherImagesInput" multiple accept="image/*" class="hidden" onchange="previewEditOtherImages(this)">
+                        <div class="text-xs text-gray-600 font-bold">+ Yeni Galeri Fotoğrafları Ekle</div>
+                        <span class="text-[10px] text-gray-400">Birden fazla resim seçebilirsiniz</span>
+                        <div id="editOtherImagesPreviewGrid" class="grid grid-cols-4 gap-2 w-full mt-2 hidden"></div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="mb-6">
-            <label class="block text-sm font-semibold text-gray-700 mb-1">Ürün Açıklaması</label>
-            <textarea name="description" rows="5" class="w-full text-sm border-gray-300 rounded-lg p-2.5 border focus:border-brand focus:ring-0 outline-none" placeholder="Ürünün ahşap kalitesi, özellikleri ve el işçiliği hakkında detaylı bilgi yazın.">{{ old('description', $product->description) }}</textarea>
+        <!-- 4. Sosyal Medya & Video Bağlantıları -->
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+            <h3 class="font-bold text-sm text-gray-800 pb-2 border-b border-gray-100 flex items-center gap-2">
+                <i class="fa-solid fa-video text-[#C87A53]"></i> Sosyal Medya & Video Bağlantıları
+            </h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Instagram Reels -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1.5">
+                        <i class="fa-brands fa-instagram text-pink-600"></i> Instagram Reels Linki
+                    </label>
+                    <input type="url" name="instagram_short_link" value="{{ old('instagram_short_link', $product->instagram_short_link) }}" placeholder="https://www.instagram.com/reel/..." class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-pink-500 focus:bg-white transition">
+                </div>
+
+                <!-- YouTube Video -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1.5">
+                        <i class="fa-brands fa-youtube text-red-600"></i> YouTube Linki
+                    </label>
+                    <input type="url" name="youtube_link" value="{{ old('youtube_link', $product->youtube_link) }}" placeholder="https://www.youtube.com/watch?v=..." class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-red-500 focus:bg-white transition">
+                </div>
+
+                <!-- TikTok Video -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1.5">
+                        <i class="fa-brands fa-tiktok text-black"></i> TikTok Linki
+                    </label>
+                    <input type="url" name="tiktok_short_link" value="{{ old('tiktok_short_link', $product->tiktok_short_link) }}" placeholder="https://www.tiktok.com/@.../video/..." class="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:border-black focus:bg-white transition">
+                </div>
+            </div>
         </div>
 
-        <div class="flex items-center gap-2 mb-6">
-            <input type="checkbox" name="is_active" id="isActive" value="1" {{ old('is_active', $product->is_active) ? 'checked' : '' }} class="rounded text-[#C87A53] focus:ring-[#C87A53] w-4 h-4">
-            <label for="isActive" class="text-sm font-semibold text-gray-700 cursor-pointer">Bu ürünü mağazada hemen satışa aç (Aktif)</label>
+        <!-- 5. Durum & Güncelle Butonları -->
+        <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+                <input type="checkbox" name="is_active" value="1" {{ old('is_active', $product->is_active) ? 'checked' : '' }} class="w-5 h-5 text-[#C87A53] rounded border-gray-300 focus:ring-[#C87A53]">
+                <div>
+                    <span class="text-xs font-bold text-gray-800 block">Ürün Satışta / Yayında</span>
+                    <span class="text-[11px] text-gray-400">İşareti kaldırırsanız ürün sitede gizlenir.</span>
+                </div>
+            </label>
+
+            <div class="flex items-center gap-3 w-full sm:w-auto">
+                <a href="{{ route('admin.products.index') }}" class="py-3 px-5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-bold transition text-center flex-1 sm:flex-initial">
+                    İptal
+                </a>
+                <button type="submit" class="py-3 px-7 bg-[#C87A53] hover:bg-[#A65F38] text-white text-xs font-bold rounded-xl shadow-lg shadow-brand/20 transition flex items-center justify-center gap-2 flex-1 sm:flex-initial">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>Değişiklikleri Kaydet</span>
+                </button>
+            </div>
         </div>
 
-        <button type="submit" class="py-3 px-8 bg-[#C87A53] hover:bg-[#A65F38] text-white font-extrabold rounded-lg text-sm transition">Değişiklikleri Kaydet</button>
     </form>
 </div>
-
-<script>
-let isSlugManuallyEdited = false;
-
-function autoGenerateSlug(title) {
-    if (isSlugManuallyEdited) return;
-    
-    let slug = title.toLowerCase()
-        .replace(/ğ/g, 'g')
-        .replace(/ü/g, 'u')
-        .replace(/ş/g, 's')
-        .replace(/ı/g, 'i')
-        .replace(/ö/g, 'o')
-        .replace(/ç/g, 'c')
-        .replace(/[^a-z0-9\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-');
-        
-    document.getElementById('productSlugInput').value = slug;
-}
-
-function toggleDiscountBlock() {
-    const hasDiscount = document.getElementById('hasDiscount').checked;
-    const block = document.getElementById('discountBlock');
-    if (hasDiscount) {
-        block.classList.remove('hidden');
-    } else {
-        block.classList.add('hidden');
-    }
-    calculateDiscount();
-}
-
-function calculateDiscount() {
-    const hasDiscount = document.getElementById('hasDiscount').checked;
-    const normalPrice = parseFloat(document.getElementById('normalPrice').value) || 0;
-    const discountedPrice = parseFloat(document.getElementById('discountedPrice').value) || 0;
-    const badge = document.getElementById('discountBadge');
-
-    if (hasDiscount && normalPrice > 0 && discountedPrice > 0 && discountedPrice < normalPrice) {
-        const percent = Math.round((1 - (discountedPrice / normalPrice)) * 100);
-        badge.innerText = '%' + percent + ' İNDİRİM';
-        badge.classList.remove('hidden');
-    } else {
-        badge.classList.add('hidden');
-    }
-}
-
-document.addEventListener('DOMContentLoaded', calculateDiscount);
-function preventSpamSubmit(form) {
-    const btn = form.querySelector('button[type="submit"]');
-    if (btn && !btn.disabled) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Kaydediliyor...';
-    }
-}
-</script>
 @endsection
+
+@push('scripts')
+<script>
+    function removeGalleryImg(index) {
+        const box = document.getElementById('galBox-' + index);
+        const input = document.getElementById('keepGal-' + index);
+        if (box) box.remove();
+        if (input) input.remove();
+    }
+
+    function previewEditMainImage(input) {
+        const preview = document.getElementById('editMainImagePreview');
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.src = e.target.result;
+                preview.classList.remove('hidden');
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    function previewEditOtherImages(input) {
+        const grid = document.getElementById('editOtherImagesPreviewGrid');
+        grid.innerHTML = '';
+        if (input.files && input.files.length > 0) {
+            grid.classList.remove('hidden');
+            Array.from(input.files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const thumb = document.createElement('div');
+                    thumb.className = 'w-full aspect-square rounded-lg bg-gray-100 overflow-hidden border border-gray-200 relative';
+                    thumb.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+                    grid.appendChild(thumb);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+    }
+</script>
+@endpush

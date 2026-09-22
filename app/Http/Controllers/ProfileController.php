@@ -2,124 +2,137 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Favorite;
+use App\Models\Order;
+use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 
 class ProfileController extends Controller
 {
+    /**
+     * Müşteri Profil & Hesap Paneli
+     */
     public function index()
     {
-        $user = auth()->user();
+        $user = Auth::user();
 
-        $ordersQuery = \App\Models\Order::where('user_id', $user->id);
-
-        if (!empty($user->email)) {
-            $email = mb_strtolower(trim($user->email));
-            $ordersQuery->orWhereRaw('LOWER(TRIM(email)) = ?', [$email]);
-
-            // Oturum açan kullanıcının e-posta adresiyle eşleşen misafir siparişlerini bağla
-            \App\Models\Order::whereNull('user_id')
-                ->whereRaw('LOWER(TRIM(email)) = ?', [$email])
-                ->update(['user_id' => $user->id]);
+        // Siparişler (Tablo varsa getir, yoksa boş koleksiyon dön)
+        try {
+            $orders = Order::where('user_id', $user->id)->latest()->get();
+        } catch (\Throwable $e) {
+            $orders = collect();
         }
 
-        if (!empty($user->phone)) {
-            $cleanPhone = preg_replace('/[^0-9]/', '', $user->phone);
-            if (strlen($cleanPhone) >= 10) {
-                $last10 = substr($cleanPhone, -10);
-                $ordersQuery->orWhere('phone', 'like', "%{$last10}%");
-
-                // Oturum açan kullanıcının telefon numarasıyla eşleşen misafir siparişlerini bağla
-                \App\Models\Order::whereNull('user_id')
-                    ->where('phone', 'like', "%{$last10}%")
-                    ->update(['user_id' => $user->id]);
-            }
-        }
-
-        $orders = $ordersQuery->with('items.product')->latest()->get();
-        $favorites = $user->favoriteProducts()->latest()->get();
+        // Favoriler
+        $favorites = Product::whereIn('id', function ($query) use ($user) {
+            $query->select('product_id')
+                ->from('favorites')
+                ->where('user_id', $user->id);
+        })
+        ->with('category')
+        ->where('is_active', true)
+        ->ordered()
+        ->get();
 
         return view('profile.index', compact('user', 'orders', 'favorites'));
     }
 
+    /**
+     * Temel Kullanıcı Bilgilerini Güncelle (Ad Soyad, Telefon)
+     */
     public function updateInfo(Request $request)
     {
-        $user = auth()->user();
+        $user = Auth::user();
 
         $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,' . $user->id,
+            'name'  => 'required|string|max:255',
             'phone' => 'nullable|string|max:20',
         ]);
 
         $user->update([
-            'name' => $request->name,
-            'email' => $request->email,
+            'name'  => $request->name,
             'phone' => $request->phone,
         ]);
 
-        return redirect()->route('profile.index', ['tab' => 'bilgiler'])->with('success', 'Kullanıcı bilgileriniz başarıyla güncellendi.');
+        return redirect()->route('profile.index', ['tab' => 'bilgiler'])
+            ->with('success', 'Kullanıcı bilgileriniz başarıyla güncellendi.');
     }
 
+    /**
+     * Teslimat Adresi Bilgilerini Güncelle
+     */
     public function updateAddress(Request $request)
     {
-        $user = auth()->user();
+        $user = Auth::user();
 
         $request->validate([
-            'address' => 'required|string|max:1000',
-            'city' => 'required|string|max:100',
+            'city'     => 'nullable|string|max:100',
             'district' => 'nullable|string|max:100',
+            'address'  => 'nullable|string|max:500',
         ]);
 
         $user->update([
-            'address' => $request->address,
-            'city' => $request->city,
+            'city'     => $request->city,
             'district' => $request->district,
+            'address'  => $request->address,
         ]);
 
-        return redirect()->route('profile.index', ['tab' => 'adres'])->with('success', 'Adres bilgileriniz başarıyla kaydedildi.');
+        return redirect()->route('profile.index', ['tab' => 'adres'])
+            ->with('success', 'Adres bilgileriniz başarıyla güncellendi.');
     }
 
+    /**
+     * Şifre Değiştirme
+     */
     public function updatePassword(Request $request)
     {
-        $user = auth()->user();
+        $user = Auth::user();
 
-        $request->validate([
-            'current_password' => 'required|current_password',
-            'password' => 'required|string|min:6|confirmed',
+        // Eğer kullanıcı sadece Google ile giriş yapmış ve şifresi yoksa current_password zorunlu olmasın
+        $rules = [
+            'password' => ['required', 'confirmed', Password::min(6)],
+        ];
+
+        if (!empty($user->password)) {
+            $rules['current_password'] = ['required', 'current_password'];
+        }
+
+        $request->validate($rules, [
+            'current_password.current_password' => 'Mevcut şifreniz hatalı.',
+            'password.confirmed'                => 'Yeni şifreleriniz birbiriyle uyuşmuyor.',
+            'password.min'                      => 'Yeni şifreniz en az 6 karakter olmalıdır.',
         ]);
 
         $user->update([
             'password' => Hash::make($request->password),
         ]);
 
-        return redirect()->route('profile.index', ['tab' => 'sifre'])->with('success', 'Şifreniz başarıyla değiştirildi.');
+        return redirect()->route('profile.index', ['tab' => 'sifre'])
+            ->with('success', 'Şifreniz başarıyla değiştirildi.');
     }
 
-    public function cancelOrder($id)
+    /**
+     * Sipariş İptal Talebi
+     */
+    public function cancelOrder(Request $request, $id)
     {
-        $order = \App\Models\Order::where('id', $id)
-                    ->where('user_id', auth()->id())
-                    ->first();
+        try {
+            $order = Order::where('user_id', Auth::id())->where('id', $id)->firstOrFail();
 
-        if (!$order) {
-            return redirect()->back()->with('error', 'Sipariş bulunamadı veya bu işlem için yetkiniz yok.');
-        }
-
-        if ($order->status !== 'pending') {
-            return redirect()->back()->with('error', 'Yalnızca ödeme bekleyen siparişler iptal edilebilir.');
-        }
-
-        // Restore stock for each item
-        foreach ($order->items as $item) {
-            if ($item->product) {
-                $item->product->increment('stock', $item->quantity);
+            if (in_array($order->status, ['pending', 'processing', 'beklemede', 'hazirlaniyor'])) {
+                $order->update(['status' => 'cancelled']);
+                return redirect()->route('profile.index', ['tab' => 'siparisler'])
+                    ->with('success', 'Siparişiniz başarıyla iptal edildi.');
             }
+
+            return redirect()->route('profile.index', ['tab' => 'siparisler'])
+                ->with('error', 'Bu sipariş kargoya verildiği veya tamamlandığı için iptal edilemez.');
+        } catch (\Throwable $e) {
+            return redirect()->route('profile.index', ['tab' => 'siparisler'])
+                ->with('error', 'Sipariş bulunamadı.');
         }
-
-        $order->update(['status' => 'cancelled']);
-
-        return redirect()->route('profile.index', ['tab' => 'siparisler'])->with('success', 'Sipariş #' . $order->id . ' başarıyla iptal edildi.');
     }
 }

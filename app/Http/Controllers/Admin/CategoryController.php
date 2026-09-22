@@ -18,17 +18,18 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255|unique:categories,name',
-            'description' => 'nullable|string',
+            'name' => 'required|string|max:255',
+            'slug' => 'nullable|string|max:255|unique:categories,slug',
         ]);
+
+        $slug = $request->filled('slug') ? Str::slug($request->slug) : Str::slug($request->name);
 
         Category::create([
             'name' => $request->name,
-            'slug' => Str::slug($request->name),
-            'description' => $request->description,
+            'slug' => $slug,
         ]);
 
-        return redirect()->back()->with('success', 'Kategori başarıyla eklendi.');
+        return redirect()->route('admin.categories.index')->with('success', 'Kategori başarıyla eklendi.');
     }
 
     public function update(Request $request, $id)
@@ -36,17 +37,18 @@ class CategoryController extends Controller
         $category = Category::findOrFail($id);
 
         $request->validate([
-            'name' => 'required|string|max:255|unique:categories,name,' . $id,
-            'description' => 'nullable|string',
+            'name' => 'required|string|max:255',
+            'slug' => 'nullable|string|max:255|unique:categories,slug,' . $id,
         ]);
+
+        $slug = $request->filled('slug') ? Str::slug($request->slug) : Str::slug($request->name);
 
         $category->update([
             'name' => $request->name,
-            'slug' => Str::slug($request->name),
-            'description' => $request->description,
+            'slug' => $slug,
         ]);
 
-        return redirect()->back()->with('success', 'Kategori başarıyla güncellendi.');
+        return redirect()->route('admin.categories.index')->with('success', 'Kategori güncellendi.');
     }
 
     public function destroy($id)
@@ -54,6 +56,6 @@ class CategoryController extends Controller
         $category = Category::findOrFail($id);
         $category->delete();
 
-        return redirect()->back()->with('success', 'Kategori başarıyla silindi.');
+        return redirect()->route('admin.categories.index')->with('success', 'Kategori silindi.');
     }
 }

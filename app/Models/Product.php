@@ -8,25 +8,26 @@ class Product extends Model
 {
     protected $fillable = [
         'category_id',
-        'three_d_template_id',
         'name',
         'slug',
-        'price',
-        'original_price',
-        'stock',
         'description',
-        'image',
-        'features',
+        'original_price',
+        'discount_price',
+        'stock',
+        'main_image',
+        'other_images',
+        'instagram_short_link',
+        'youtube_link',
+        'tiktok_short_link',
         'is_active',
-        'sort_order',
     ];
 
     protected $casts = [
-        'features' => 'array',
-        'is_active' => 'boolean',
-        'sort_order' => 'integer',
-        'price' => 'decimal:2',
+        'other_images'   => 'array',
+        'is_active'      => 'boolean',
+        'stock'          => 'integer',
         'original_price' => 'decimal:2',
+        'discount_price' => 'decimal:2',
     ];
 
     public function category()
@@ -34,111 +35,107 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
-    public function threeDTemplate()
+    /**
+     * Efektif Satış Fiyatı (İndirim varsa discount_price, yoksa original_price)
+     */
+    public function getPriceAttribute()
     {
-        return $this->belongsTo(ThreeDTemplate::class, 'three_d_template_id');
+        return $this->discount_price !== null && $this->discount_price > 0
+            ? $this->discount_price
+            : $this->original_price;
     }
 
-    public function getDiscountPercentAttribute()
+    /**
+     * İndirim Yüzdesi Hesabı
+     */
+    public function getDiscountPercentAttribute(): int
     {
-        if ($this->original_price && $this->original_price > $this->price && $this->original_price > 0) {
-            return (int) round((1 - ($this->price / $this->original_price)) * 100);
+        if ($this->discount_price && $this->original_price > $this->discount_price && $this->original_price > 0) {
+            return (int) round((1 - ($this->discount_price / $this->original_price)) * 100);
         }
         return 0;
     }
 
-    public function getYoutubeIdAttribute()
+    /**
+     * Ana Görsel URL'i
+     */
+    public function getMainImageUrlAttribute(): string
     {
-        $url = $this->features['youtube_url'] ?? null;
-        if (!$url) return null;
-
-        preg_match('/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/', $url, $matches);
-        return $matches[1] ?? null;
-    }
-
-    public function getInstagramCodeAttribute()
-    {
-        $url = $this->features['instagram_url'] ?? null;
-        if (!$url) return null;
-
-        preg_match('/(?:instagram\.com|instagr\.am)\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/i', $url, $matches);
-        return $matches[1] ?? null;
-    }
-
-    public function getInstagramEmbedUrlAttribute()
-    {
-        $code = $this->instagram_code;
-        if (!$code) return null;
-
-        return "https://www.instagram.com/p/{$code}/embed";
-    }
-
-    public function getImageAttribute($value)
-    {
-        if (!$value) {
+        if (!$this->main_image) {
             return url('/cerceve.png');
         }
-        if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
-            return $value;
+        if (str_starts_with($this->main_image, 'http://') || str_starts_with($this->main_image, 'https://')) {
+            return $this->main_image;
         }
-        return url($value);
+        return url($this->main_image);
     }
 
-    public function getRawImageAttribute()
+    /**
+     * Geriye dönük uyumluluk ($product->image)
+     */
+    public function getImageAttribute(): string
     {
-        return $this->attributes['image'] ?? null;
+        return $this->main_image_url;
     }
 
-    public function getGalleryUrlsAttribute()
+    /**
+     * Tüm Galeri Görselleri URL Listesi
+     */
+    public function getGalleryUrlsAttribute(): array
     {
-        $images = $this->features['images'] ?? [];
-        if (!is_array($images)) return [];
-
-        return array_map(function ($img) {
-            if (str_starts_with($img, 'http://') || str_starts_with($img, 'https://')) {
-                return $img;
-            }
-            return url($img);
-        }, $images);
-    }
-
-    public function getImagesAttribute()
-    {
-        $list = collect();
-        $rawImage = $this->getRawOriginal('image') ?: ($this->attributes['image'] ?? null);
-        if (!empty($rawImage)) {
-            $list->push((object)['url' => ltrim($rawImage, '/')]);
+        $urls = [];
+        if ($this->main_image) {
+            $urls[] = $this->main_image_url;
         }
 
-        $gallery = $this->features['images'] ?? [];
-        if (is_array($gallery)) {
-            foreach ($gallery as $img) {
-                if (!empty($img)) {
-                    $list->push((object)['url' => ltrim($img, '/')]);
+        if (is_array($this->other_images)) {
+            foreach ($this->other_images as $img) {
+                if (empty($img)) continue;
+                if (str_starts_with($img, 'http://') || str_starts_with($img, 'https://')) {
+                    $urls[] = $img;
+                } else {
+                    $urls[] = url($img);
                 }
             }
         }
 
-        return $list;
-    }
-
-    public function getSkuAttribute()
-    {
-        return $this->model_code ?: (string)$this->id;
-    }
-
-    public function getBrandNameAttribute()
-    {
-        return $this->features['brand'] ?? 'Ahşap Evim';
-    }
-
-    public function getCategoryNameAttribute()
-    {
-        return $this->category?->name ?? 'Ahşap Çerçeve';
+        return array_values(array_unique($urls));
     }
 
     /**
-     * SEO Uyumlu ve Benzersiz URL / Slug Oluşturucu
+     * YouTube ID & Embed URL
+     */
+    public function getYoutubeIdAttribute(): ?string
+    {
+        if (!$this->youtube_link) return null;
+        preg_match('/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/', $this->youtube_link, $matches);
+        return $matches[1] ?? null;
+    }
+
+    public function getYoutubeEmbedUrlAttribute(): ?string
+    {
+        $id = $this->youtube_id;
+        return $id ? "https://www.youtube.com/embed/{$id}" : null;
+    }
+
+    /**
+     * Instagram Kodu & Embed URL
+     */
+    public function getInstagramCodeAttribute(): ?string
+    {
+        if (!$this->instagram_short_link) return null;
+        preg_match('/(?:instagram\.com|instagr\.am)\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/i', $this->instagram_short_link, $matches);
+        return $matches[1] ?? null;
+    }
+
+    public function getInstagramEmbedUrlAttribute(): ?string
+    {
+        $code = $this->instagram_code;
+        return $code ? "https://www.instagram.com/p/{$code}/embed" : null;
+    }
+
+    /**
+     * Otomatik SEO Uyumlu ve Benzersiz Slug Üretici
      */
     public static function generateUniqueSlug(string $title, ?int $ignoreId = null): string
     {
@@ -160,58 +157,22 @@ class Product extends Model
         return $slug;
     }
 
-    /**
-     * Otomatik model dinleyicisi - Slug boşsa ürün başlığından üretilir, sort_order atanır.
-     */
     protected static function booted()
     {
         static::saving(function ($product) {
             if (empty($product->slug) && !empty($product->name)) {
                 $product->slug = static::generateUniqueSlug($product->name, $product->id ?? null);
             }
-            if ($product->sort_order === null || $product->sort_order === '') {
-                $product->sort_order = (static::max('sort_order') ?? 0) + 1;
-            }
         });
     }
 
-    /**
-     * Admin sıralamasına göre listeleme scope'u
-     */
     public function scopeOrdered($query)
     {
-        return $query->orderBy('sort_order', 'asc')->orderBy('id', 'desc');
+        return $query->orderBy('id', 'desc');
     }
 
-    /**
-     * Ürün detay URL'i ($product->url)
-     */
     public function getUrlAttribute(): string
     {
         return url('/urun/' . ($this->slug ?: $this->id));
-    }
-
-    public function favorites()
-    {
-        return $this->hasMany(Favorite::class);
-    }
-
-    public function isFavoritedBy($user = null)
-    {
-        if (!$user) {
-            $user = auth()->user();
-        }
-        if (!$user) return false;
-
-        if ($this->relationLoaded('favorites')) {
-            return $this->favorites->contains('user_id', $user->id);
-        }
-
-        static $userFavoriteIds = null;
-        if ($userFavoriteIds === null) {
-            $userFavoriteIds = Favorite::where('user_id', $user->id)->pluck('product_id')->flip()->toArray();
-        }
-
-        return isset($userFavoriteIds[$this->id]);
     }
 }

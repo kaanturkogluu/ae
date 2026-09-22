@@ -50,7 +50,7 @@
 
             <!-- Eylemler -->
             <div class="flex flex-wrap items-center justify-center gap-3 pt-4">
-                <a href="{{ url('/siparis-takip?code=AHS-849201') }}" class="px-6 py-3.5 bg-brand hover:bg-brand-dark text-white text-xs font-bold rounded-xl shadow-lg shadow-brand/20 transition flex items-center gap-2">
+                <a href="{{ url('/urunler') }}" class="px-6 py-3.5 bg-brand hover:bg-brand-dark text-white text-xs font-bold rounded-xl shadow-lg shadow-brand/20 transition flex items-center gap-2">
                     <i class="fa-solid fa-box-open"></i>
                     <span>Siparişi Takip Et</span>
                 </a>
@@ -125,7 +125,7 @@
 
             <!-- Eylemler -->
             <div class="flex items-center justify-center gap-3 pt-2">
-                <a href="{{ url('/siparis-takip?code=AHS-849201') }}" class="px-6 py-3.5 bg-brand hover:bg-brand-dark text-white text-xs font-bold rounded-xl shadow-lg transition">
+                <a href="{{ url('/urunler') }}" class="px-6 py-3.5 bg-brand hover:bg-brand-dark text-white text-xs font-bold rounded-xl shadow-lg transition">
                     Sipariş Takip Ekranına Git
                 </a>
             </div>

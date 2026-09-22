@@ -332,18 +332,6 @@
 
             <!-- User Actions -->
             <div class="flex items-center gap-5 text-[13px] font-semibold text-gray-700 shrink-0">
-                <!-- Sipariş Takip Link -->
-                @auth
-                    <a href="{{ route('profile.index', ['tab' => 'siparisler']) }}" class="hover:text-brand flex flex-col items-center gap-0.5 group transition">
-                        <i class="fa-solid fa-truck-fast text-xl group-hover:text-brand text-[#C87A53]"></i>
-                        <span class="hidden md:inline text-[11px]">Sipariş Takip</span>
-                    </a>
-                @else
-                    <a href="{{ route('order.tracking') }}" class="hover:text-brand flex flex-col items-center gap-0.5 group transition">
-                        <i class="fa-solid fa-truck-fast text-xl group-hover:text-brand"></i>
-                        <span class="hidden md:inline text-[11px]">Sipariş Takip</span>
-                    </a>
-                @endauth
                 @auth
                     @if(auth()->user()->is_admin)
                         <!-- Admin Direct Link (No Dropdown) -->
@@ -533,7 +521,7 @@
                         <li><a href="{{ url('/urunler') }}" class="hover:text-[#C87A53] hover:translate-x-1 inline-block transition transform">Tüm Ürünlerimiz</a></li>
                         <li><a href="{{ url('/iletisim') }}" class="hover:text-[#C87A53] hover:translate-x-1 inline-block transition transform">İletişim & Konum</a></li>
                         <li><a href="{{ url('/sikca-sorulanlar') }}" class="hover:text-[#C87A53] hover:translate-x-1 inline-block transition transform">Sıkça Sorulan Sorular</a></li>
-                        <li><a href="{{ route('order.tracking') }}" class="hover:text-[#C87A53] hover:translate-x-1 inline-block transition transform">Sipariş Takip Ekranı</a></li>
+                        <li><a href="{{ route('favorites.index') }}" class="hover:text-[#C87A53] hover:translate-x-1 inline-block transition transform">Favori Ürünlerim</a></li>
                     </ul>
                 </div>
 

@@ -2,237 +2,215 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Product;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class CartController extends Controller
 {
+    /**
+     * Sepet Sayfası
+     */
+    public function index()
+    {
+        $cart = session()->get('cart', []);
+        return view('cart.index', compact('cart'));
+    }
+
+    /**
+     * Sepet Çekmecesi (Drawer) & AJAX Verisi
+     */
+    public function getCartData()
+    {
+        $cart = session()->get('cart', []);
+        $total = 0;
+        $count = 0;
+
+        foreach ($cart as $item) {
+            $price = floatval($item['price'] ?? 0);
+            $qty   = intval($item['quantity'] ?? 1);
+            $total += ($price * $qty);
+            $count += $qty;
+        }
+
+        return response()->json([
+            'status'    => 'success',
+            'cart'      => $cart,
+            'count'     => $count,
+            'total'     => number_format($total, 2, ',', '.') . ' TL',
+            'total_raw' => $total,
+        ]);
+    }
+
+    /**
+     * Sepete Ürün Ekleme (Özelleştirme ve Görsel Destekli)
+     */
     public function add(Request $request)
     {
         $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'custom_image_front' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:25600',
-            'custom_image_back' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:25600',
-            'custom_image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:25600',
+            'product_id'          => 'required|exists:products,id',
+            'quantity'            => 'nullable|integer|min:1|max:100',
+            'custom_image'        => 'nullable|file|image|max:10240',
+            'custom_image_front'  => 'nullable|file|image|max:10240',
+            'custom_image_back'   => 'nullable|file|image|max:10240',
+            'custom_preview'      => 'nullable|string',
+            'gift_note'           => 'nullable|string|max:500',
+            'is_gift'             => 'nullable|boolean',
         ]);
 
         $product = Product::findOrFail($request->product_id);
+        $quantity = (int) ($request->input('quantity', 1));
+        if ($quantity < 1) $quantity = 1;
 
-        // Stock check
-        if ($product->stock <= 0) {
-            if ($request->wantsJson() || $request->ajax()) {
-                return response()->json(['status' => 'error', 'message' => 'Bu ürün şu anda stokta bulunmamaktadır.'], 422);
-            }
-            return redirect()->back()->with('error', 'Üzgünüz, bu ürün şu anda stokta bulunmamaktadır.');
+        $disk = config('filesystems.default') === 'r2' ? 'r2' : (config('filesystems.disks.r2.key') ? 'r2' : 'public');
+
+        // Yüklenen özel fotoğrafları işle
+        $customImage = null;
+        if ($request->hasFile('custom_image')) {
+            $path = Storage::disk($disk)->putFile('cart/custom', $request->file('custom_image'));
+            $customImage = $disk === 'r2' ? rtrim(config('filesystems.disks.r2.url'), '/') . '/' . $path : '/storage/' . $path;
         }
 
-        $hasFront = $request->hasFile('custom_image_front');
-        $hasBack = $request->hasFile('custom_image_back');
-        $hasSingle = $request->hasFile('custom_image');
-        $hasPreview = $request->filled('custom_preview_base64');
-
-        // Strict Security Check: 1st Photo is MANDATORY
-        if (!$hasFront && !$hasSingle) {
-            return redirect()->back()->with('error', 'Sipariş verebilmek için 1. Fotoğrafı (Ön Yüz) yüklemeniz zorunludur!');
+        $customImageFront = null;
+        if ($request->hasFile('custom_image_front')) {
+            $path = Storage::disk($disk)->putFile('cart/front', $request->file('custom_image_front'));
+            $customImageFront = $disk === 'r2' ? rtrim(config('filesystems.disks.r2.url'), '/') . '/' . $path : '/storage/' . $path;
         }
 
-        // Strict Filename & Double Extension Verification (anti-exploit / security protection)
-        $dangerList = ['exe', 'php', 'zip', 'rar', 'sh', 'bat', 'py', 'js', 'html', 'htm', 'phtml', 'phps', 'jar', 'vbs', 'scr', 'dll', 'cmd'];
-        $allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-
-        foreach (['custom_image_front', 'custom_image_back', 'custom_image'] as $fileKey) {
-            if ($request->hasFile($fileKey)) {
-                $file = $request->file($fileKey);
-                $origName = strtolower($file->getClientOriginalName());
-                $nameParts = explode('.', $origName);
-                $lastExt = end($nameParts);
-
-                // Reject if final extension is not in allowed list OR if any part contains dangerous extensions
-                if (!in_array($lastExt, $allowedExts) || count(array_intersect($nameParts, $dangerList)) > 0) {
-                    $err = 'Güvenlik uyarısı: Yüklemek istediğiniz dosya şüpheli veya zararlı çift uzantı (örn: .exe, .php) barındırıyor!';
-                    if ($request->wantsJson() || $request->ajax()) {
-                        return response()->json(['status' => 'error', 'message' => $err], 422);
-                    }
-                    return redirect()->back()->with('error', $err);
-                }
-            }
+        $customImageBack = null;
+        if ($request->hasFile('custom_image_back')) {
+            $path = Storage::disk($disk)->putFile('cart/back', $request->file('custom_image_back'));
+            $customImageBack = $disk === 'r2' ? rtrim(config('filesystems.disks.r2.url'), '/') . '/' . $path : '/storage/' . $path;
         }
 
-        File::ensureDirectoryExists(public_path('uploads/customizations'));
-
-        // Handle Front Image
-        $frontImagePath = null;
-        if ($hasFront) {
-            $frontName = 'front_' . time() . '_' . Str::random(8) . '.' . $request->file('custom_image_front')->extension();
-            $request->file('custom_image_front')->move(public_path('uploads/customizations'), $frontName);
-            $frontImagePath = '/uploads/customizations/' . $frontName;
-        }
-
-        // Handle Back Image
-        $backImagePath = null;
-        if ($hasBack) {
-            $backName = 'back_' . time() . '_' . Str::random(8) . '.' . $request->file('custom_image_back')->extension();
-            $request->file('custom_image_back')->move(public_path('uploads/customizations'), $backName);
-            $backImagePath = '/uploads/customizations/' . $backName;
-        }
-
-        // Fallback Single Custom Image
-        $singleImagePath = null;
-        if ($hasSingle) {
-            $singleName = 'custom_' . time() . '_' . Str::random(8) . '.' . $request->file('custom_image')->extension();
-            $request->file('custom_image')->move(public_path('uploads/customizations'), $singleName);
-            $singleImagePath = '/uploads/customizations/' . $singleName;
-        }
-
-        // Handle 3D Snapshot
-        $customPreviewPath = null;
-        if ($hasPreview) {
-            $base64Data = $request->custom_preview_base64;
-            if (preg_match('/^data:image\/(\w+);base64,/', $base64Data, $type)) {
-                $data = substr($base64Data, strpos($base64Data, ',') + 1);
-                $data = base64_decode($data);
-                if ($data !== false) {
-                    $previewName = '3d_preview_' . time() . '_' . Str::random(8) . '.png';
-                    file_put_contents(public_path('uploads/customizations/' . $previewName), $data);
-                    $customPreviewPath = '/uploads/customizations/' . $previewName;
-                }
-            }
-        }
-
-        $isGift = $request->boolean('is_gift');
-        $giftNote = trim($request->input('gift_note', ''));
+        $customPreview = $request->input('custom_preview');
+        $giftNote = $request->input('gift_note');
+        $isGift = $request->boolean('is_gift') || !empty($giftNote);
 
         $cart = session()->get('cart', []);
 
-        $uniqueSeed = ($frontImagePath ?: '') . ($backImagePath ?: '') . ($singleImagePath ?: '') . ($customPreviewPath ?: '') . ($giftNote ?: '');
-        $cartKey = $product->id . ($uniqueSeed ? '_' . md5($uniqueSeed) : '');
-
-        $displayImage = $customPreviewPath 
-            ? url($customPreviewPath) 
-            : ($frontImagePath ? url($frontImagePath) : ($singleImagePath ? url($singleImagePath) : $product->image));
+        // Benzersiz sepet kalemi anahtarı (özel fotoğraflı ürünler ayrı kalem olsun)
+        $uniquePayload = [
+            'p'  => $product->id,
+            'ci' => $customImage,
+            'cf' => $customImageFront,
+            'cb' => $customImageBack,
+            'gn' => $giftNote,
+        ];
+        $cartKey = $product->id . '_' . substr(md5(json_encode($uniquePayload)), 0, 8);
 
         if (isset($cart[$cartKey])) {
-            $cart[$cartKey]['quantity']++;
+            $cart[$cartKey]['quantity'] += $quantity;
         } else {
             $cart[$cartKey] = [
-                'product_id' => $product->id,
-                'name' => $product->name,
-                'price' => $product->price,
-                'quantity' => 1,
-                'image' => $displayImage,
-                'custom_image_front' => $frontImagePath ? url($frontImagePath) : ($singleImagePath ? url($singleImagePath) : null),
-                'custom_image_back' => $backImagePath ? url($backImagePath) : null,
-                'custom_image' => $frontImagePath ? url($frontImagePath) : ($singleImagePath ? url($singleImagePath) : null),
-                'custom_preview' => $customPreviewPath ? url($customPreviewPath) : null,
-                'is_gift' => $isGift,
-                'gift_note' => $giftNote,
+                'key'                => $cartKey,
+                'product_id'         => $product->id,
+                'name'               => $product->name,
+                'slug'               => $product->slug,
+                'price'              => (float) $product->price,
+                'original_price'     => (float) $product->original_price,
+                'image'              => $product->main_image_url,
+                'quantity'           => $quantity,
+                'custom_image'       => $customImage,
+                'custom_image_front' => $customImageFront,
+                'custom_image_back'  => $customImageBack,
+                'custom_preview'     => $customPreview,
+                'is_gift'            => $isGift,
+                'gift_note'          => $giftNote,
             ];
         }
 
         session()->put('cart', $cart);
 
-        if ($request->wantsJson() || $request->ajax()) {
+        $totalCount = array_sum(array_column($cart, 'quantity'));
+
+        if ($request->expectsJson() || $request->ajax()) {
             return response()->json([
-                'status' => 'success',
-                'message' => 'Kişiselleştirilmiş ürününüz sepete eklendi!',
-                'cart' => $cart,
-                'count' => count($cart),
-                'total' => $this->calculateTotal($cart),
+                'status'  => 'success',
+                'message' => 'Ürün sepete eklendi!',
+                'count'   => $totalCount,
+                'cart'    => $cart,
             ]);
         }
 
-        return redirect()->route('cart.index')->with('success', 'Kişiselleştirilmiş ürününüz sepete eklendi!');
+        return redirect()->route('cart.index')->with('success', 'Ürün sepete eklendi.');
     }
 
-    public function index()
-    {
-        return redirect()->to(url('/urunler?open_cart=1'));
-    }
-
-    public function getCartData()
-    {
-        $cart = session()->get('cart', []);
-        return response()->json([
-            'status' => 'success',
-            'cart' => $cart,
-            'count' => count($cart),
-            'total' => $this->calculateTotal($cart),
-        ]);
-    }
-
+    /**
+     * Sepetteki Ürün Adedini Güncelleme
+     */
     public function update(Request $request)
     {
         $request->validate([
-            'key' => 'required|string',
-            'quantity' => 'required|integer|min:1|max:100',
+            'key'      => 'required|string',
+            'quantity' => 'required|integer|min:0|max:100',
         ]);
+
+        $key = $request->input('key');
+        $quantity = (int) $request->input('quantity');
 
         $cart = session()->get('cart', []);
 
-        if (isset($cart[$request->key])) {
-            $cart[$request->key]['quantity'] = intval($request->quantity);
-            session()->put('cart', $cart);
-
-            if ($request->wantsJson() || $request->ajax()) {
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Sepet güncellendi.',
-                    'cart' => $cart,
-                    'count' => count($cart),
-                    'total' => $this->calculateTotal($cart),
-                ]);
+        if (isset($cart[$key])) {
+            if ($quantity <= 0) {
+                unset($cart[$key]);
+            } else {
+                $cart[$key]['quantity'] = $quantity;
             }
-
-            return redirect()->back()->with('success', 'Sepet güncellendi.');
+            session()->put('cart', $cart);
         }
 
-        if ($request->wantsJson() || $request->ajax()) {
-            return response()->json(['status' => 'error', 'message' => 'Ürün bulunamadı.'], 404);
+        $totalCount = array_sum(array_column($cart, 'quantity'));
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Sepet güncellendi.',
+                'count'   => $totalCount,
+                'cart'    => $cart,
+            ]);
         }
 
-        return redirect()->back()->with('error', 'Ürün bulunamadı.');
+        return redirect()->route('cart.index')->with('success', 'Sepetiniz güncellendi.');
     }
 
+    /**
+     * Sepetten Ürün Çıkarma
+     */
     public function remove(Request $request)
     {
         $request->validate([
             'key' => 'required|string',
         ]);
 
+        $key = $request->input('key');
         $cart = session()->get('cart', []);
 
-        if (isset($cart[$request->key])) {
-            unset($cart[$request->key]);
+        if (isset($cart[$key])) {
+            unset($cart[$key]);
             session()->put('cart', $cart);
-
-            if ($request->wantsJson() || $request->ajax()) {
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Ürün sepetten silindi.',
-                    'cart' => $cart,
-                    'count' => count($cart),
-                    'total' => $this->calculateTotal($cart),
-                ]);
-            }
-
-            return redirect()->back()->with('success', 'Ürün sepetten silindi.');
         }
 
-        if ($request->wantsJson() || $request->ajax()) {
-            return response()->json(['status' => 'error', 'message' => 'Ürün sepetten silinemedi.'], 400);
+        $totalCount = array_sum(array_column($cart, 'quantity'));
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Ürün sepetten çıkarıldı.',
+                'count'   => $totalCount,
+                'cart'    => $cart,
+            ]);
         }
 
-        return redirect()->back()->with('error', 'Ürün sepetten silinemedi.');
+        return redirect()->route('cart.index')->with('info', 'Ürün sepetten çıkarıldı.');
     }
 
-    private function calculateTotal($cart)
+    /**
+     * Sepeti Tamamen Temizleme
+     */
+    public function clear()
     {
-        $total = 0;
-        foreach ($cart as $item) {
-            $total += ($item['price'] * $item['quantity']);
-        }
-        return number_format($total, 2, ',', '.') . ' TL';
+        session()->forget('cart');
+        return redirect()->route('cart.index')->with('info', 'Sepetiniz temizlendi.');
     }
 }

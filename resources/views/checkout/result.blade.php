@@ -174,12 +174,8 @@
                         <a href="{{ url('/hesabim?tab=siparisler') }}" class="bg-[#C87A53] hover:bg-[#A65F38] text-white font-extrabold py-3.5 px-6 rounded-xl transition text-xs shadow-md flex items-center justify-center gap-2">
                             <i class="fa-solid fa-box-open"></i> Siparişlerimi Görüntüle
                         </a>
-                    @else
-                        <a href="{{ route('order.tracking') }}" class="bg-[#C87A53] hover:bg-[#A65F38] text-white font-extrabold py-3.5 px-6 rounded-xl transition text-xs shadow-md flex items-center justify-center gap-2">
-                            <i class="fa-solid fa-truck-fast"></i> Siparişimi Takip Et
-                        </a>
                     @endauth
-                    <a href="{{ url('/') }}" class="bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold py-3.5 px-6 rounded-xl transition text-xs border border-stone-200 flex items-center justify-center gap-2">
+                    <a href="{{ url('/urunler') }}" class="bg-[#C87A53] hover:bg-[#A65F38] text-white font-extrabold py-3.5 px-6 rounded-xl transition text-xs shadow-md flex items-center justify-center gap-2">
                         <i class="fa-solid fa-store"></i> Alışverişe Devam Et
                     </a>
                 </div>

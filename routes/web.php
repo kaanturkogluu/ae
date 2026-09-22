@@ -4,37 +4,24 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\Category;
-use App\Http\Controllers\OrderTrackingController;
-use App\Http\Controllers\CartController;
-use App\Http\Controllers\CheckoutController;
-use App\Http\Controllers\AuthController;
+use App\Models\Page;
 use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\Admin\CategoryController;
-use App\Http\Controllers\Admin\ProductController;
-use App\Http\Controllers\Admin\ThreeDTemplateController;
-use App\Http\Controllers\Admin\PageController;
-use App\Http\Controllers\Admin\LoginController;
-use App\Http\Controllers\Admin\OrderController;
-use App\Http\Controllers\Admin\ShippingCompanyController;
-use App\Http\Controllers\Admin\MessageLogController;
-use App\Http\Controllers\Admin\HomeBannerController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CartController;
+use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\Admin\RevenueController;
-use App\Http\Controllers\Admin\MerchantController;
-use App\Http\Controllers\Admin\SettingController;
-use App\Http\Controllers\SeoController;
-
-// ─── SEO, Sitemap & XML Product Feed ──────────────────────────────────────────
-Route::get('/sitemap.xml', [SeoController::class, 'sitemap'])->name('seo.sitemap');
-Route::get('/urunler.xml', [SeoController::class, 'urunlerXml'])->name('seo.urunler_xml');
-Route::get('/facebook-catalog.xml', [SeoController::class, 'facebookCatalogXml'])->name('seo.facebook_catalog_xml');
-Route::get('/facebook-feed.xml', [SeoController::class, 'facebookCatalogXml'])->name('seo.facebook_feed_xml');
-Route::get('/facebook/catalog.xml', [SeoController::class, 'facebookCatalogXml'])->name('seo.facebook_catalog_alt_xml');
+use App\Http\Controllers\Admin\LoginController as AdminLoginController;
+use App\Http\Controllers\Admin\ProductController as AdminProductController;
+use App\Http\Controllers\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\PageController as AdminPageController;
+use App\Http\Controllers\Admin\SettingController as AdminSettingController;
+use App\Http\Controllers\Admin\HomeBannerController as AdminHomeBannerController;
+use App\Http\Controllers\Admin\ShippingCompanyController as AdminShippingCompanyController;
+use App\Http\Controllers\Admin\MessageLogController as AdminMessageLogController;
 
 // ─── Shared Search Helper ─────────────────────────────────────────────────────
-// Applies partial-word product search filter to an existing Eloquent query.
-// Used by / (home), /urunler (products list) and /canli-arama (live AJAX search)
-// so that changes only need to be made in one place.
 function applyProductSearch($query, string $search): void
 {
     $keywords = array_filter(explode(' ', $search), fn($w) => mb_strlen($w) >= 2);
@@ -42,32 +29,18 @@ function applyProductSearch($query, string $search): void
     $query->where(function ($q) use ($search, $keywords) {
         $q->where('name', 'like', "%{$search}%")
           ->orWhere('description', 'like', "%{$search}%")
-          ->orWhere('barcode', 'like', "%{$search}%")
-          ->orWhere('model_code', 'like', "%{$search}%")
-          ->orWhere('features', 'like', "%{$search}%")
           ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
 
         foreach ($keywords as $word) {
             $q->orWhere('name', 'like', "%{$word}%")
               ->orWhere('description', 'like', "%{$word}%")
-              ->orWhere('features', 'like', "%{$word}%")
               ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$word}%"));
         }
     });
 }
 
-// ─── Sipariş Takip ───────────────────────────────────────────────────────────
-Route::get('/siparis-takip',  [OrderTrackingController::class, 'index'])->name('order.tracking');
-Route::post('/siparis-takip', [OrderTrackingController::class, 'track'])->name('order.tracking.search');
-
-// ─── Frontend Routes ──────────────────────────────────────────────────────────
+// ─── Frontend Anasayfa & Ürün Rotaları ─────────────────────────────────────────
 Route::get('/', function (Request $request) {
-    // Mobil cihazları sunucu tarafında yönlendir (886 satır sayfa yüklenmeden)
-    $ua = $request->userAgent() ?? '';
-    if (preg_match('/Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i', $ua)) {
-        return redirect('/urunler', 301);
-    }
-
     $query = Product::where('is_active', true)->with('category');
 
     if (request('category')) {
@@ -81,20 +54,13 @@ Route::get('/', function (Request $request) {
     }
 
     $products   = $query->ordered()->get();
-    $categories = Category::withCount('products')->get();
-    
-    $homeBanners = \Illuminate\Support\Facades\Cache::remember('home_banners_active', 600, function () {
-        try {
-            return \App\Models\HomeBanner::where('is_active', true)->orderBy('order', 'asc')->get();
-        } catch (\Throwable $e) {
-            return collect();
-        }
-    });
+    $categories = Category::all();
+    $homeBanners = collect();
 
     return view('home', compact('products', 'categories', 'homeBanners'));
-});
+})->name('home');
 
-// Canlı Arama (AJAX / Autocomplete)
+// Canlı Arama (AJAX)
 Route::get('/canli-arama', function (Request $request) {
     $q = trim($request->input('q', ''));
     if (mb_strlen($q) < 2) {
@@ -108,7 +74,7 @@ Route::get('/canli-arama', function (Request $request) {
     $data = $products->map(fn($p) => [
         'id'            => $p->id,
         'name'          => $p->name,
-        'category_name' => $p->category ? $p->category->name : 'Ahşap Çerçeve',
+        'category_name' => $p->category ? $p->category->name : 'Ahşap Ürün',
         'price'         => number_format($p->price, 2, ',', '.') . ' ₺',
         'image'         => url($p->image ?: '/cerceve.png'),
         'url'           => $p->url,
@@ -117,6 +83,27 @@ Route::get('/canli-arama', function (Request $request) {
     return response()->json(['status' => 'success', 'products' => $data, 'count' => count($data)]);
 })->name('search.live');
 
+// Tüm Ürünler Kataloğu
+Route::get('/urunler', function () {
+    $query = Product::where('is_active', true)->with('category');
+
+    if (request('category')) {
+        $slug = request('category');
+        $query->whereHas('category', fn($q) => $q->where('slug', $slug));
+    }
+
+    $search = trim(request('q') ?: request('search', ''));
+    if ($search !== '') {
+        applyProductSearch($query, $search);
+    }
+
+    $products   = $query->ordered()->get();
+    $categories = Category::all();
+
+    return view('products.index', compact('products', 'categories'));
+})->name('products.index');
+
+// Ürün Detay
 Route::get('/urun/{id}', function ($id) {
     $product = Product::with('category')->where('id', $id)->orWhere('slug', $id)->firstOrFail();
 
@@ -148,36 +135,17 @@ Route::get('/urun/{id}', function ($id) {
     return view('products.show', compact('product', 'similarProducts', 'recentlyViewed'));
 })->name('product.show');
 
-Route::get('/urunler', function () {
-    $query = Product::where('is_active', true)->with('category');
+// ─── Müşteri Auth Rotaları ───────────────────────────────────────────────────
+Route::get('/giris',                 [AuthController::class, 'showLoginForm'])->name('login');
+Route::post('/giris',                [AuthController::class, 'login'])->name('login.post')->middleware('throttle:10,1');
+Route::get('/kayit',                 [AuthController::class, 'showRegisterForm'])->name('register');
+Route::post('/kayit',                [AuthController::class, 'register'])->name('register.post')->middleware('throttle:5,1');
+Route::get('/auth/google',           [AuthController::class, 'googleLogin']);
+Route::post('/auth/google',          [AuthController::class, 'googleLogin'])->name('auth.google');
+Route::get('/auth/google/callback',  [AuthController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+Route::post('/cikis',                [AuthController::class, 'logout'])->name('logout');
 
-    if (request('category')) {
-        $slug = request('category');
-        $query->whereHas('category', fn($q) => $q->where('slug', $slug));
-    }
-
-    $search = trim(request('q') ?: request('search', ''));
-    if ($search !== '') {
-        applyProductSearch($query, $search);
-    }
-
-    $products   = $query->ordered()->get();
-    $categories = Category::all();
-
-    return view('products.index', compact('products', 'categories'));
-});
-
-// ─── User Auth Routes ─────────────────────────────────────────────────────────
-Route::get('/giris',  [AuthController::class, 'showLoginForm'])->name('login');
-Route::post('/giris', [AuthController::class, 'login'])->name('login.post')->middleware('throttle:10,1');
-Route::get('/kayit',  [AuthController::class, 'showRegisterForm'])->name('register');
-Route::post('/kayit', [AuthController::class, 'register'])->name('register.post')->middleware('throttle:5,1');
-Route::get('/auth/google',          [AuthController::class, 'googleLogin']);
-Route::post('/auth/google',         [AuthController::class, 'googleLogin'])->name('auth.google');
-Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback'])->name('auth.google.callback');
-Route::post('/cikis',               [AuthController::class, 'logout'])->name('logout');
-
-// ─── User Profile Routes (Protected) ─────────────────────────────────────────
+// ─── Müşteri Hesabı & Profil (Giriş Zorunlu) ──────────────────────────────────
 Route::middleware('auth')->group(function () {
     Route::get('/hesabim',                       [ProfileController::class, 'index'])->name('profile.index');
     Route::post('/hesabim/bilgiler',             [ProfileController::class, 'updateInfo'])->name('profile.updateInfo');
@@ -186,26 +154,65 @@ Route::middleware('auth')->group(function () {
     Route::put('/hesabim/siparisler/{id}/iptal', [ProfileController::class, 'cancelOrder'])->name('orders.cancel');
 });
 
-// ─── Favorites ────────────────────────────────────────────────────────────────
-Route::get('/favoriler',      [FavoriteController::class, 'index'])->name('favorites.index');
-Route::post('/favori-toggle', [FavoriteController::class, 'toggle'])->name('favorites.toggle');
+// ─── Favoriler (Favorites) ───────────────────────────────────────────────────
+Route::get('/favoriler',             [FavoriteController::class, 'index'])->name('favorites.index');
+Route::post('/favori-toggle',        [FavoriteController::class, 'toggle'])->name('favorites.toggle');
+Route::get('/api/favoriler/liste',   [FavoriteController::class, 'getFavorites'])->name('favorites.list');
 
-// ─── Cart ─────────────────────────────────────────────────────────────────────
-Route::get('/sepet',           [CartController::class, 'index'])->name('cart.index');
-Route::get('/sepet/data',      [CartController::class, 'getCartData'])->name('cart.data');
-Route::post('/sepet/ekle',     [CartController::class, 'add'])->name('cart.add');
-Route::post('/sepet/guncelle', [CartController::class, 'update'])->name('cart.update');
-Route::post('/sepet/sil',      [CartController::class, 'remove'])->name('cart.remove');
+// ─── Sepet (Cart) ─────────────────────────────────────────────────────────────
+Route::get('/sepet',                 [CartController::class, 'index'])->name('cart.index');
+Route::get('/sepet/data',            [CartController::class, 'getCartData'])->name('cart.data');
+Route::post('/sepet/ekle',           [CartController::class, 'add'])->name('cart.add');
+Route::post('/sepet/guncelle',       [CartController::class, 'update'])->name('cart.update');
+Route::post('/sepet/sil',            [CartController::class, 'remove'])->name('cart.remove');
+Route::post('/sepet/temizle',        [CartController::class, 'clear'])->name('cart.clear');
 
-// ─── Checkout ─────────────────────────────────────────────────────────────────
-Route::get('/odeme',                             [CheckoutController::class, 'index'])->name('checkout.index');
-Route::post('/odeme',                            [CheckoutController::class, 'process'])->name('checkout.process');
-Route::match(['get', 'post'], '/odeme/callback', [CheckoutController::class, 'callback'])->name('checkout.callback');
-Route::get('/odeme/sonuc',                       [CheckoutController::class, 'result'])->name('checkout.result');
+// ─── Ödeme & Checkout ────────────────────────────────────────────────────────
+Route::get('/odeme',                 [CheckoutController::class, 'index'])->name('checkout.index');
+Route::post('/odeme',                [CheckoutController::class, 'process'])->name('checkout.process');
+Route::get('/odeme/sonuc',           [CheckoutController::class, 'result'])->name('checkout.result');
 
-// ─── Dynamic Informational Pages ─────────────────────────────────────────────
+// ─── Yönetici (Admin) Giriş & Çıkış ──────────────────────────────────────────
+Route::get('/yonetim/giris',         [AdminLoginController::class, 'showLoginForm'])->name('admin.login');
+Route::post('/yonetim/giris',        [AdminLoginController::class, 'login'])->name('admin.login.post')->middleware('throttle:5,1');
+Route::post('/yonetim/cikis',        [AdminLoginController::class, 'logout'])->name('admin.logout');
+Route::get('/admin', fn() => redirect()->route('admin.revenue.index'));
+
+// ─── Yönetici Paneli Rotaları (Admin Middleware Korumalı) ────────────────────
+Route::prefix('yonetim')->middleware(['auth', 'admin'])->group(function () {
+    Route::get('/', fn() => redirect()->route('admin.revenue.index'));
+    Route::get('/gelir-tablosu', [RevenueController::class, 'index'])->name('admin.revenue.index');
+
+    // Kategoriler
+    Route::resource('kategoriler', AdminCategoryController::class)->except(['create', 'show', 'edit'])->names('admin.categories');
+
+    // Ürünler
+    Route::resource('urunler', AdminProductController::class)->parameters(['urunler' => 'product'])->names('admin.products');
+
+    // Siparişler
+    Route::resource('siparisler', AdminOrderController::class)->only(['index', 'show', 'update', 'destroy'])->names('admin.orders');
+
+    // Sayfalar & Afişler
+    Route::resource('sayfalar', AdminPageController::class)->names('admin.pages');
+    Route::resource('anasayfa-gorselleri', AdminHomeBannerController::class)->names('admin.banners');
+
+    // Kargo Şirketleri
+    Route::resource('kargo-sirketleri', AdminShippingCompanyController::class)->except(['create', 'show', 'edit'])->names('admin.shipping_companies');
+
+    // Loglar
+    Route::get('/loglar/mail',         [AdminMessageLogController::class, 'mailLogs'])->name('admin.mail_logs.index');
+    Route::get('/loglar/sms',          [AdminMessageLogController::class, 'smsLogs'])->name('admin.sms_logs.index');
+    Route::post('/manuel-mail-gonder', [AdminMessageLogController::class, 'sendManualMail'])->name('admin.mail.send_manual');
+    Route::post('/manuel-sms-gonder',  [AdminMessageLogController::class, 'sendManualSms'])->name('admin.sms.send_manual');
+
+    // Ayarlar
+    Route::get('/ayarlar',             [AdminSettingController::class, 'index'])->name('admin.settings.index');
+    Route::post('/ayarlar',            [AdminSettingController::class, 'update'])->name('admin.settings.update');
+});
+
+// ─── Dinamik Sayfalar (Pages) ────────────────────────────────────────────────
 Route::get('/{slug}', function ($slug) {
-    $page = \App\Models\Page::where('slug', $slug)->where('is_active', true)->firstOrFail();
+    $page = Page::where('slug', $slug)->where('is_active', true)->firstOrFail();
 
     if ($slug === 'iletisim') {
         $contactData = json_decode($page->content, true);
@@ -233,61 +240,4 @@ Route::get('/{slug}', function ($slug) {
     }
 
     return view('pages.show', ['pageTitle' => $page->title, 'content' => $page->content]);
-});
-
-// ─── Admin Auth ───────────────────────────────────────────────────────────────
-Route::get('/yonetim/giris',  [LoginController::class, 'showLoginForm'])->name('admin.login');
-Route::post('/yonetim/giris', [LoginController::class, 'login'])->name('admin.login.post')->middleware('throttle:5,1');
-Route::post('/yonetim/cikis', [LoginController::class, 'logout'])->name('admin.logout');
-
-Route::get('/admin', fn() => redirect()->route('admin.revenue.index'));
-
-// ─── Admin Routes (Protected) ─────────────────────────────────────────────────
-Route::prefix('yonetim')->middleware(['auth', 'admin'])->group(function () {
-    Route::get('/', fn() => redirect()->route('admin.revenue.index'));
-
-    Route::resource('kategoriler', CategoryController::class)->except(['create', 'show', 'edit'])->names('admin.categories');
-
-    Route::post('urunler/siralama-guncelle', [ProductController::class, 'updateOrder'])->name('admin.products.update_order');
-    Route::post('urunler/otomatik-sirala',    [ProductController::class, 'autoSort'])->name('admin.products.auto_sort');
-    Route::post('urunler',          [ProductController::class, 'store'])->middleware('throttle:15,1')->name('admin.products.store');
-    Route::put('urunler/{product}', [ProductController::class, 'update'])->middleware('throttle:15,1')->name('admin.products.update');
-    Route::resource('urunler', ProductController::class)->parameters(['urunler' => 'product'])->except(['store', 'update'])->names('admin.products');
-
-    Route::post('3d-sablonlar',           [ThreeDTemplateController::class, 'store'])->middleware('throttle:15,1')->name('admin.templates.store');
-    Route::put('3d-sablonlar/{template}', [ThreeDTemplateController::class, 'update'])->middleware('throttle:15,1')->name('admin.templates.update');
-    Route::resource('3d-sablonlar', ThreeDTemplateController::class)->parameters(['3d-sablonlar' => 'template'])->except(['store', 'update'])->names('admin.templates');
-
-    Route::resource('sayfalar', PageController::class)->names('admin.pages');
-    Route::resource('anasayfa-gorselleri', HomeBannerController::class)->names('admin.banners');
-    Route::get('/siparis-gorsel-indir', [OrderController::class, 'downloadImage'])->name('admin.orders.download_image');
-    Route::get('/siparisler/toplu-etiket-yazdir', [OrderController::class, 'printBulkLabels'])->name('admin.orders.print_bulk_labels');
-    Route::get('/siparisler/{id}/etiket-yazdir', [OrderController::class, 'printLabel'])->name('admin.orders.print_label');
-    Route::get('/siparisler/{id}/yurtici-etiket', [OrderController::class, 'printYurticiLabel'])->name('admin.orders.yurtici_label');
-    Route::post('/siparisler/{id}/yurtici-olustur', [OrderController::class, 'createYurticiShipment'])->name('admin.orders.yurtici_create');
-    Route::post('/siparisler/{id}/yurtici-sorgula', [OrderController::class, 'queryYurticiShipment'])->name('admin.orders.yurtici_query');
-    Route::post('/siparisler/{id}/yurtici-iptal', [OrderController::class, 'cancelYurticiShipment'])->name('admin.orders.yurtici_cancel');
-    Route::resource('siparisler', OrderController::class)->only(['index', 'show', 'update', 'destroy'])->names('admin.orders');
-    Route::resource('kargo-sirketleri', ShippingCompanyController::class)->except(['create', 'show', 'edit'])->names('admin.shipping_companies');
-
-    // İletişim & Mesaj Logları
-    Route::get('/loglar/mail',         [MessageLogController::class, 'mailLogs'])->name('admin.mail_logs.index');
-    Route::get('/loglar/sms',          [MessageLogController::class, 'smsLogs'])->name('admin.sms_logs.index');
-    Route::post('/manuel-mail-gonder', [MessageLogController::class, 'sendManualMail'])->name('admin.mail.send_manual');
-    Route::post('/manuel-sms-gonder',  [MessageLogController::class, 'sendManualSms'])->name('admin.sms.send_manual');
-
-    // Gelir Tablosu & İstatistikler
-    Route::get('/gelir-tablosu', [RevenueController::class, 'index'])->name('admin.revenue.index');
-
-    // Sistem & Bildirim Ayarları
-    Route::get('/ayarlar',                    [SettingController::class, 'index'])->name('admin.settings.index');
-    Route::post('/ayarlar',                   [SettingController::class, 'update'])->name('admin.settings.update');
-    Route::post('/ayarlar/test-sms',           [SettingController::class, 'testSms'])->name('admin.settings.test_sms');
-    Route::post('/ayarlar/test-email',         [SettingController::class, 'testEmail'])->name('admin.settings.test_email');
-    Route::post('/ayarlar/test-facebook-capi', [SettingController::class, 'testFacebookCapi'])->name('admin.settings.test_facebook_capi');
-    Route::post('/ayarlar/test-yurtici',       [SettingController::class, 'testYurtici'])->name('admin.settings.test_yurtici');
-
-    // Canlı Bildirim Merkezi API
-    Route::get('/api/son-siparisler', [SettingController::class, 'recentOrdersApi'])->name('admin.orders.recent_api');
-
-});
+})->where('slug', '[a-zA-Z0-9_-]+')->name('pages.show');

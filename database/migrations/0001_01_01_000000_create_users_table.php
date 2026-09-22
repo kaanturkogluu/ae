@@ -15,8 +15,16 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('email')->unique();
+            $table->string('google_id')->nullable()->unique();
+            $table->string('avatar')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('identity_number', 11)->nullable();
+            $table->string('city')->nullable();
+            $table->string('district')->nullable();
+            $table->text('address')->nullable();
+            $table->string('password')->nullable();
+            $table->boolean('is_admin')->default(false);
             $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
             $table->rememberToken();
             $table->timestamps();
         });

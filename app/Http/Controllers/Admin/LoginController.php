@@ -11,7 +11,7 @@ class LoginController extends Controller
     public function showLoginForm()
     {
         if (Auth::check() && Auth::user()->is_admin) {
-            return redirect()->route('admin.products.index');
+            return redirect()->route('admin.revenue.index');
         }
         return view('admin.auth.login');
     }
@@ -19,23 +19,17 @@ class LoginController extends Controller
     public function login(Request $request)
     {
         $credentials = $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|string',
+            'email'    => 'required|email',
+            'password' => 'required',
         ]);
 
-        if (Auth::attempt($credentials, $request->has('remember'))) {
+        if (Auth::attempt(['email' => $credentials['email'], 'password' => $credentials['password'], 'is_admin' => 1], $request->boolean('remember'))) {
             $request->session()->regenerate();
-
-            if (!Auth::user()->is_admin) {
-                Auth::logout();
-                return back()->withErrors(['email' => 'Bu panel sadece yöneticiler içindir.'])->onlyInput('email');
-            }
-
-            return redirect()->intended(route('admin.products.index'))->with('success', 'Başarıyla giriş yapıldı.');
+            return redirect()->intended(route('admin.revenue.index'));
         }
 
         return back()->withErrors([
-            'email' => 'Girilen bilgiler kayıtlarımızla eşleşmedi.',
+            'email' => 'Yönetici bilgileri hatalı veya bu hesaba yönetici yetkisi verilmemiş.',
         ])->onlyInput('email');
     }
 
@@ -44,6 +38,6 @@ class LoginController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        return redirect()->route('admin.login')->with('success', 'Başarıyla çıkış yapıldı.');
+        return redirect()->route('admin.login');
     }
 }

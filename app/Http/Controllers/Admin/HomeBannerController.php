@@ -5,18 +5,14 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\HomeBanner;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 
 class HomeBannerController extends Controller
 {
     public function index()
     {
-        $banners = collect();
         try {
-            if (\Illuminate\Support\Facades\Schema::hasTable('home_banners')) {
-                $banners = HomeBanner::orderBy('order', 'asc')->get();
-            }
+            $banners = HomeBanner::orderBy('order', 'asc')->get();
         } catch (\Throwable $e) {
             $banners = collect();
         }
@@ -26,73 +22,30 @@ class HomeBannerController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,webp,gif|max:10240',
             'title' => 'nullable|string|max:255',
-            'order' => 'nullable|integer|min:0',
+            'image' => 'required|image|max:10240',
+            'link'  => 'nullable|string|max:500',
         ]);
 
-        $imagePath = null;
-        if ($request->hasFile('image')) {
-            File::ensureDirectoryExists(public_path('uploads/banners'));
-            $imageName = 'banner_' . time() . '_' . Str::random(8) . '.' . $request->image->extension();
-            $request->image->move(public_path('uploads/banners'), $imageName);
-            $imagePath = '/uploads/banners/' . $imageName;
-        }
-
-        $maxOrder = HomeBanner::max('order') ?? 0;
+        $disk = config('filesystems.default') === 'r2' ? 'r2' : (config('filesystems.disks.r2.key') ? 'r2' : 'public');
+        $path = Storage::disk($disk)->putFile('banners', $request->file('image'));
+        $imageUrl = $disk === 'r2' ? rtrim(config('filesystems.disks.r2.url'), '/') . '/' . $path : '/storage/' . $path;
 
         HomeBanner::create([
-            'title' => $request->title ?: 'Anasayfa Görseli',
-            'image' => $imagePath,
-            'order' => $request->filled('order') ? (int) $request->order : ($maxOrder + 1),
-            'is_active' => true,
-        ]);
-
-        return redirect()->back()->with('success', 'Anasayfa görseli başarıyla eklendi.');
-    }
-
-    public function update(Request $request, $id)
-    {
-        $banner = HomeBanner::findOrFail($id);
-
-        $request->validate([
-            'title' => 'nullable|string|max:255',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:10240',
-            'order' => 'required|integer|min:0',
-        ]);
-
-        $imagePath = $banner->image;
-        if ($request->hasFile('image')) {
-            if ($banner->image && !str_contains($banner->image, '/images/a') && File::exists(public_path($banner->image))) {
-                File::delete(public_path($banner->image));
-            }
-            File::ensureDirectoryExists(public_path('uploads/banners'));
-            $imageName = 'banner_' . time() . '_' . Str::random(8) . '.' . $request->image->extension();
-            $request->image->move(public_path('uploads/banners'), $imageName);
-            $imagePath = '/uploads/banners/' . $imageName;
-        }
-
-        $banner->update([
-            'title' => $request->title ?: 'Anasayfa Görseli',
-            'image' => $imagePath,
-            'order' => (int) $request->order,
+            'title'     => $request->title,
+            'image'     => $imageUrl,
+            'link'      => $request->link,
+            'order'     => $request->input('order', 0),
             'is_active' => $request->has('is_active'),
         ]);
 
-        return redirect()->back()->with('success', 'Anasayfa görseli güncellendi.');
+        return redirect()->route('admin.banners.index')->with('success', 'Afiş/Banner başarıyla eklendi.');
     }
 
     public function destroy($id)
     {
         $banner = HomeBanner::findOrFail($id);
-
-        // Varsayılan a1-a6 görselleri haricindeki yüklenen dosyaları sil
-        if ($banner->image && !str_contains($banner->image, '/images/a') && File::exists(public_path($banner->image))) {
-            File::delete(public_path($banner->image));
-        }
-
         $banner->delete();
-
-        return redirect()->back()->with('success', 'Görsel silindi.');
+        return redirect()->route('admin.banners.index')->with('success', 'Banner silindi.');
     }
 }
